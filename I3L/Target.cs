@@ -50,7 +50,7 @@ static class Target
 
     static unsafe void ConfigureCodeGeneration()
     {
-        ReadOnlySpan<byte> programName = "IL2LLVM\0"u8;
+        ReadOnlySpan<byte> programName = "I3L\0"u8;
         ReadOnlySpan<byte> registerAllocator = "-regalloc=basic\0"u8;
         fixed (byte* programNamePointer = programName)
         fixed (byte* registerAllocatorPointer = registerAllocator)

@@ -28,8 +28,8 @@
     </Reference>
   </ItemGroup>
 
-  <Target Name="CopyLibLLVM" AfterTargets="Build">
-    <Copy SourceFiles="lib\win-x64\libLLVM.dll" DestinationFiles="$(TargetDir)libLLVM.dll" SkipUnchangedFiles="true" />
-  </Target>
+  <ItemGroup>
+    <None Update="lib\win-x64\libLLVM.dll" TargetPath="libLLVM.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
 
 </Project>
