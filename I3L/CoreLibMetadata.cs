@@ -75,10 +75,12 @@ sealed class CoreLibMetadata
     public FieldDefinition ArrayLengthsField => GetInstanceField(Array, "_lengths");
     public FieldDefinition ArrayElementSizeField => GetInstanceField(Array, "m_elementSize");
     public FieldDefinition ArrayDataField => GetInstanceField(Array, "m_pData");
+    public FieldDefinition GCRootAddressField => GetInstanceField(GCRoot, "Address");
+    public FieldDefinition GCRootStructScanTypeField => GetInstanceField(GCRoot, "StructScanType");
     public FieldDefinition GCStaticRootsField => GetStaticField(GCHeap, "s_staticRoots");
     public FieldDefinition GCStaticRootNextField => GetInstanceField(GCStaticRoot, "Next");
     public FieldDefinition GCStaticRootAddressField => GetInstanceField(GCStaticRoot, "Address");
-    public FieldDefinition GCStaticRootTypeField => GetInstanceField(GCStaticRoot, "Type");
+    public FieldDefinition GCStaticRootStructScanTypeField => GetInstanceField(GCStaticRoot, "StructScanType");
     public FieldDefinition RuntimeFieldDataField => GetInstanceField(RuntimeFieldHandle, "Data");
     public FieldDefinition RuntimeFieldLengthField => GetInstanceField(RuntimeFieldHandle, "Length");
     public FieldDefinition RuntimeArgumentHandleArgumentsField => GetInstanceField(RuntimeArgumentHandle, "Arguments");

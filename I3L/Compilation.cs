@@ -1132,7 +1132,8 @@ sealed class Compilation : TranslationComponent
                                          .GroupBy(handler => (handler.TryStart.Offset, handler.TryEnd.Offset)))
                             {
                                 var frame = BuildEntryAlloca(LLVMTypeRef.CreateArray(int8Type,
-                                    (uint)GetTypeSize(coreLib.ExceptionFrame)), (uint)pointerSize);
+                                    (uint)GetTypeSize(coreLib.ExceptionFrame)),
+                                    (uint)GetTypeDefinitionAlignment(coreLib.ExceptionFrame));
                                 var jumpBufferType = coreLib.JumpBuffer;
                                 var buffer = BuildEntryAlloca(LLVMTypeRef.CreateArray(int8Type,
                                     (uint)GetTypeSize(jumpBufferType)), 16);
@@ -1232,14 +1233,15 @@ sealed class Compilation : TranslationComponent
                         var stackRootCapacity = maxStack + 2;
                         const int temporaryRootCount = 4;
                         var rootEntryCount = tracksGCFrames ? fixedRoots.Count + stackRootCapacity + temporaryRootCount : 0;
-                        var rootEntryType = LLVMTypeRef.CreateArray(exceptionPointerType,
-                            (uint)Math.Max(1, rootEntryCount * 2));
+                        var rootEntrySize = GetTypeSize(coreLib.GCRoot);
+                        var rootEntryType = LLVMTypeRef.CreateArray(int8Type,
+                            checked((uint)(Math.Max(1, rootEntryCount) * rootEntrySize)));
                         var rootEntries = tracksGCFrames
-                            ? BuildEntryAlloca(rootEntryType, (uint)pointerSize)
+                            ? BuildEntryAlloca(rootEntryType, (uint)GetTypeDefinitionAlignment(coreLib.GCRoot))
                             : default;
                         var rootFrame = tracksGCFrames
                             ? BuildEntryAlloca(LLVMTypeRef.CreateArray(int8Type,
-                                (uint)GetTypeSize(coreLib.GCFrame)), (uint)pointerSize)
+                                (uint)GetTypeSize(coreLib.GCFrame)), (uint)GetTypeDefinitionAlignment(coreLib.GCFrame))
                             : default;
                         var rootSpills = tracksGCFrames
                             ? Enumerable.Range(0, stackRootCapacity).Select(_ => BuildEntryAlloca(exceptionPointerType)).ToArray()
@@ -1253,9 +1255,8 @@ sealed class Compilation : TranslationComponent
                         {
                             if (!tracksGCFrames)
                                 return default;
-                            return builder.BuildGEP2(rootEntryType, rootEntries,
-                                [LLVMValueRef.CreateConstInt(sizeType, 0, false),
-                         LLVMValueRef.CreateConstInt(sizeType, (ulong)(index * 2), false)]);
+                            return builder.BuildGEP2(int8Type, rootEntries,
+                                [LLVMValueRef.CreateConstInt(sizeType, (ulong)(index * rootEntrySize), false)]);
                         }
 
                         void StoreRootEntry(int index, LLVMValueRef address, TypeReference? type)
@@ -1263,13 +1264,11 @@ sealed class Compilation : TranslationComponent
                             if (!tracksGCFrames)
                                 return;
                             var entry = GetRootEntryAddress(index);
-                            builder.BuildStore(ConvertValue(builder, address, exceptionPointerType), entry);
-                            var typeAddress = builder.BuildGEP2(exceptionPointerType, entry,
-                                [LLVMValueRef.CreateConstInt(sizeType, 1, false)]);
-                            var typeValue = type is null
+                            StoreField(builder, entry, coreLib.GCRootAddressField, address);
+                            var structScanType = type is null
                                 ? LLVMValueRef.CreateConstNull(exceptionPointerType)
                                 : GetRuntimeTypeObject(type);
-                            builder.BuildStore(ConvertValue(builder, typeValue, exceptionPointerType), typeAddress);
+                            StoreField(builder, entry, coreLib.GCRootStructScanTypeField, structScanType);
                         }
 
                         if (tracksGCFrames)
@@ -1470,7 +1469,7 @@ sealed class Compilation : TranslationComponent
             Progress($"[6/7] Translated {translatedMethods.Count} methods. Running LLVM cleanup and verification...");
 
             var pointerType = LLVMTypeRef.CreatePointer(int8Type, 0);
-            var staticRoots = new List<(LLVMValueRef Address, LLVMValueRef Type)>();
+            var staticRoots = new List<(LLVMValueRef Address, LLVMValueRef StructScanType)>();
             foreach (var (name, storage) in staticFields)
             {
                 var fieldType = staticFieldTypes[name];
@@ -1484,25 +1483,55 @@ sealed class Compilation : TranslationComponent
             if (staticRootFields.Length != 3 ||
                 !staticRootFields.Contains(coreLib.GCStaticRootNextField) ||
                 !staticRootFields.Contains(coreLib.GCStaticRootAddressField) ||
-                !staticRootFields.Contains(coreLib.GCStaticRootTypeField))
+                !staticRootFields.Contains(coreLib.GCStaticRootStructScanTypeField))
                 throw new InvalidOperationException($"Unexpected {coreLib.GCStaticRoot.FullName} layout.");
-            var staticRootType = context.GetStructType(
-                staticRootFields.Select(field => GetLLVMTypeRef(field.FieldType)).ToArray(), false);
+            var staticRootSize = GetTypeSize(coreLib.GCStaticRoot);
+            var orderedStaticRootFields = staticRootFields.OrderBy(GetFieldOffset).ToArray();
+            var staticRootElementTypes = new List<LLVMTypeRef>();
+            var staticRootPadding = new List<int>();
+            var staticRootPosition = 0;
+            foreach (var field in orderedStaticRootFields)
+            {
+                var offset = GetFieldOffset(field);
+                if (offset < staticRootPosition)
+                    throw new InvalidOperationException($"Overlapping {coreLib.GCStaticRoot.FullName} fields are unsupported.");
+                var padding = offset - staticRootPosition;
+                staticRootPadding.Add(padding);
+                if (padding != 0)
+                    staticRootElementTypes.Add(LLVMTypeRef.CreateArray(int8Type, (uint)padding));
+                staticRootElementTypes.Add(GetLLVMTypeRef(field.FieldType));
+                staticRootPosition = offset + GetTypeSize(field.FieldType);
+            }
+            var trailingPadding = staticRootSize - staticRootPosition;
+            if (trailingPadding < 0)
+                throw new InvalidOperationException($"Invalid {coreLib.GCStaticRoot.FullName} size.");
+            if (trailingPadding != 0)
+                staticRootElementTypes.Add(LLVMTypeRef.CreateArray(int8Type, (uint)trailingPadding));
+            var staticRootType = context.GetStructType(staticRootElementTypes.ToArray(), true);
             var nextStaticRoot = LLVMValueRef.CreateConstNull(pointerType);
             for (int index = staticRoots.Count - 1; index >= 0; index--)
             {
                 var staticRoot = AddInternalGlobal(staticRootType, $"__gc_static_root_{index}");
-                var staticRootValues = staticRootFields.Select(field =>
+                staticRoot.Alignment = (uint)GetTypeDefinitionAlignment(coreLib.GCStaticRoot);
+                var staticRootValues = new List<LLVMValueRef>();
+                for (int fieldIndex = 0; fieldIndex < orderedStaticRootFields.Length; fieldIndex++)
                 {
+                    var padding = staticRootPadding[fieldIndex];
+                    if (padding != 0)
+                        staticRootValues.Add(LLVMValueRef.CreateConstNull(LLVMTypeRef.CreateArray(int8Type, (uint)padding)));
+                    var field = orderedStaticRootFields[fieldIndex];
                     if (ReferenceEquals(field, coreLib.GCStaticRootNextField))
-                        return nextStaticRoot;
-                    if (ReferenceEquals(field, coreLib.GCStaticRootAddressField))
-                        return staticRoots[index].Address;
-                    if (ReferenceEquals(field, coreLib.GCStaticRootTypeField))
-                        return staticRoots[index].Type;
-                    throw new InvalidOperationException($"Unexpected {coreLib.GCStaticRoot.FullName} field: {field.Name}.");
-                }).ToArray();
-                staticRoot.Initializer = LLVMValueRef.CreateConstNamedStruct(staticRootType, staticRootValues);
+                        staticRootValues.Add(nextStaticRoot);
+                    else if (ReferenceEquals(field, coreLib.GCStaticRootAddressField))
+                        staticRootValues.Add(staticRoots[index].Address);
+                    else if (ReferenceEquals(field, coreLib.GCStaticRootStructScanTypeField))
+                        staticRootValues.Add(staticRoots[index].StructScanType);
+                    else
+                        throw new InvalidOperationException($"Unexpected {coreLib.GCStaticRoot.FullName} field: {field.Name}.");
+                }
+                if (trailingPadding != 0)
+                    staticRootValues.Add(LLVMValueRef.CreateConstNull(LLVMTypeRef.CreateArray(int8Type, (uint)trailingPadding)));
+                staticRoot.Initializer = LLVMValueRef.CreateConstNamedStruct(staticRootType, staticRootValues.ToArray());
                 nextStaticRoot = LLVMValueRef.CreateConstPointerCast(staticRoot, pointerType);
             }
             var staticRootHead = GetStaticField(coreLib.GCStaticRootsField);

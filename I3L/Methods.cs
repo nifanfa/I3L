@@ -1165,18 +1165,15 @@ sealed class Methods(Translator translator) : TranslationComponent(translator)
             var rootSlot = builder.BuildAlloca(pointerType);
             rootSlot.Alignment = (uint)pointerSize;
             builder.BuildStore(array, rootSlot);
-            var rootEntriesType = LLVMTypeRef.CreateArray(pointerType, 2);
+            var rootEntriesType = LLVMTypeRef.CreateArray(int8Type, (uint)GetTypeSize(coreLib.GCRoot));
             var rootEntries = builder.BuildAlloca(rootEntriesType);
-            rootEntries.Alignment = (uint)pointerSize;
-            var zero = LLVMValueRef.CreateConstInt(sizeType, 0, false);
-            builder.BuildStore(builder.BuildBitCast(rootSlot, pointerType),
-                builder.BuildGEP2(rootEntriesType, rootEntries, [zero, zero]));
-            builder.BuildStore(LLVMValueRef.CreateConstNull(pointerType),
-                builder.BuildGEP2(rootEntriesType, rootEntries,
-                    [zero, LLVMValueRef.CreateConstInt(sizeType, 1, false)]));
+            rootEntries.Alignment = (uint)GetTypeDefinitionAlignment(coreLib.GCRoot);
+            StoreField(builder, rootEntries, coreLib.GCRootAddressField, rootSlot);
+            StoreField(builder, rootEntries, coreLib.GCRootStructScanTypeField,
+                LLVMValueRef.CreateConstNull(pointerType));
             var rootFrameType = LLVMTypeRef.CreateArray(int8Type, (uint)GetTypeSize(coreLib.GCFrame));
             var rootFrame = builder.BuildAlloca(rootFrameType);
-            rootFrame.Alignment = (uint)pointerSize;
+            rootFrame.Alignment = (uint)GetTypeDefinitionAlignment(coreLib.GCFrame);
             var gcPush = EnsureMethodRegistered(coreLib.GCPushMethod);
             var gcPop = EnsureMethodRegistered(coreLib.GCPopMethod);
             builder.BuildCall2(gcPush.Item2, gcPush.Item1,
