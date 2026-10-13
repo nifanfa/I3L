@@ -65,6 +65,7 @@ sealed class Types(Translator translator) : TranslationComponent(translator)
                     tokenType = SubstituteGenericParameter(tokenType, method);
                     var handleStorage = buildEntryAlloca(LLVMTypeRef.CreateArray(int8Type,
                         (uint)Math.Max(1, GetTypeSize(coreLib.RuntimeTypeHandle))));
+                    handleStorage.Alignment = (uint)GetTypeAlignment(coreLib.RuntimeTypeHandle);
                     var handle = builder.BuildBitCast(handleStorage, pointerType);
                     StoreField(builder, handle, coreLib.RuntimeTypeHandleTypeField,
                         GetRuntimeTypeObject(tokenType));
@@ -145,6 +146,7 @@ sealed class Types(Translator translator) : TranslationComponent(translator)
                             throw new NotSupportedException($"Nullable type is not defined: {valueType.FullName}");
                         var storage = buildEntryAlloca(LLVMTypeRef.CreateArray(int8Type,
                             (uint)Math.Max(1, GetTypeSize(valueType))));
+                        storage.Alignment = (uint)GetTypeAlignment(valueType);
                         var nullable = builder.BuildBitCast(storage, pointerType);
                         FillMemory(builder, nullable, LLVMValueRef.CreateConstNull(int8Type),
                             LLVMValueRef.CreateConstInt(sizeType, (ulong)Math.Max(1, GetTypeSize(valueType)), false));
@@ -161,8 +163,9 @@ sealed class Types(Translator translator) : TranslationComponent(translator)
                         CopyValue(builder, GetFieldAddress(builder, nullable, valueField, valueType),
                             GetBoxedValueAddress(builder, value, nullableElementType), GetTypeSize(nullableElementType));
                         var hasValueField = coreLib.GetNullableHasValueField(nullableDefinition);
-                        builder.BuildStore(LLVMValueRef.CreateConstInt(GetLLVMTypeRef(hasValueField.FieldType), 1, false),
-                            GetFieldAddress(builder, nullable, hasValueField, valueType));
+                        StoreValue(builder, GetFieldAddress(builder, nullable, hasValueField, valueType),
+                            LLVMValueRef.CreateConstInt(GetLLVMTypeRef(hasValueField.FieldType), 1, false),
+                            hasValueField.FieldType);
                         builder.BuildBr(continuation);
 
                         builder.PositionAtEnd(continuation);
@@ -200,11 +203,13 @@ sealed class Types(Translator translator) : TranslationComponent(translator)
                     // the same information without a special LLVM type.
                     var typedReferenceStorage = buildEntryAlloca(LLVMTypeRef.CreateArray(
                         int8Type, (uint)Math.Max(1, GetTypeSize(coreLib.TypedReference))));
+                    typedReferenceStorage.Alignment = (uint)GetTypeAlignment(coreLib.TypedReference);
                     var typedReference = builder.BuildBitCast(typedReferenceStorage, pointerType);
                     StoreField(builder, typedReference, coreLib.TypedReferenceValueField, valueAddress);
 
                     var typeHandleStorage = buildEntryAlloca(LLVMTypeRef.CreateArray(
                         int8Type, (uint)Math.Max(1, GetTypeSize(coreLib.RuntimeTypeHandle))));
+                    typeHandleStorage.Alignment = (uint)GetTypeAlignment(coreLib.RuntimeTypeHandle);
                     var typeHandle = builder.BuildBitCast(typeHandleStorage, pointerType);
                     StoreField(builder, typeHandle, coreLib.RuntimeTypeHandleTypeField,
                         GetRuntimeTypeObject(valueType));

@@ -164,7 +164,9 @@ sealed class Runtime(Translator translator) : TranslationComponent(translator)
         {
             var pointerType = LLVMTypeRef.CreatePointer(int8Type, 0);
             var storageType = LLVMTypeRef.CreateArray(int8Type, (uint)Math.Max(1, GetTypeSize(type)));
-            var storage = builder.BuildBitCast(builder.BuildAlloca(storageType), pointerType);
+            var valueStorage = builder.BuildAlloca(storageType);
+            valueStorage.Alignment = (uint)GetTypeAlignment(type);
+            var storage = builder.BuildBitCast(valueStorage, pointerType);
             var local = builder.BuildAlloca(pointerType);
             builder.BuildStore(storage, local);
             return new(local, pointerType);
@@ -500,6 +502,7 @@ sealed class Runtime(Translator translator) : TranslationComponent(translator)
         {
             var storageType = LLVMTypeRef.CreateArray(int8Type, (uint)Math.Max(1, GetTypeSize(type)));
             var storage = builder.BuildAlloca(storageType);
+            storage.Alignment = (uint)GetTypeAlignment(type);
             FillMemory(builder, storage, LLVMValueRef.CreateConstNull(int8Type),
                 LLVMValueRef.CreateConstInt(sizeType, (ulong)Math.Max(1, GetTypeSize(type)), false));
             if (constructorDefinition is not null)

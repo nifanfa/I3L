@@ -879,6 +879,7 @@ sealed class Methods(Translator translator) : TranslationComponent(translator)
             var storageSize = Math.Max(initialValue.Length, Math.Max(1, GetTypeSize(fieldReferenceType)));
             var storageType = LLVMTypeRef.CreateArray(int8Type, (uint)storageSize);
             var storage = AddInternalGlobal(storageType, fieldName);
+            storage.Alignment = (uint)GetTypeAlignment(fieldReferenceType);
             storage.Initializer = LLVMValueRef.CreateConstArray(int8Type, Enumerable.Range(0, storageSize)
                 .Select(index => LLVMValueRef.CreateConstInt(int8Type,
                     index < initialValue.Length ? initialValue[index] : 0ul, false))
@@ -893,6 +894,7 @@ sealed class Methods(Translator translator) : TranslationComponent(translator)
             var storageSize = Math.Max(1, GetTypeSize(fieldReferenceType));
             var storageType = LLVMTypeRef.CreateArray(int8Type, (uint)storageSize);
             var storage = AddInternalGlobal(storageType, fieldName);
+            storage.Alignment = (uint)GetTypeAlignment(fieldReferenceType);
             storage.Initializer = LLVMValueRef.CreateConstNull(storageType);
             var storageResult = new Tuple<LLVMValueRef, LLVMTypeRef>(storage, fieldType);
             staticFields.Add(fieldName, storageResult);

@@ -277,6 +277,7 @@ sealed class Calls(Translator translator) : TranslationComponent(translator)
                             var descriptorSize = GetTypeSize(coreLib.VariableArgument);
                             var descriptors = methodContext.BuildEntryAlloca(LLVMTypeRef.CreateArray(int8Type,
                                 (uint)(descriptorSize * variableArgumentCount)));
+                            descriptors.Alignment = (uint)GetTypeAlignment(coreLib.VariableArgument);
                             variableArguments = builder.BuildBitCast(descriptors, pointerType);
                             for (int index = 0; index < variableArgumentCount; index++)
                             {
@@ -295,6 +296,7 @@ sealed class Calls(Translator translator) : TranslationComponent(translator)
                                     builder.BuildBitCast(valueStorage, pointerType));
                                 var typeHandleStorage = methodContext.BuildEntryAlloca(LLVMTypeRef.CreateArray(
                                     int8Type, (uint)Math.Max(1, GetTypeSize(coreLib.RuntimeTypeHandle))));
+                                typeHandleStorage.Alignment = (uint)GetTypeAlignment(coreLib.RuntimeTypeHandle);
                                 var typeHandle = builder.BuildBitCast(typeHandleStorage, pointerType);
                                 StoreField(builder, typeHandle, coreLib.RuntimeTypeHandleTypeField,
                                     GetRuntimeTypeObject(parameterType));
