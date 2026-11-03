@@ -1,6 +1,6 @@
 <Project>
 	
-  <PropertyGroup Condition="'$(MSBuildProjectExtension)' != '.shproj'">
+  <PropertyGroup Condition="'$(MSBuildProjectExtension)' == '.csproj'">
     <NoStdLib>true</NoStdLib>
     <NoConfig>true</NoConfig>
     <ImplicitUsings>disable</ImplicitUsings>
